@@ -1,0 +1,219 @@
+subinfo_fields:
+  - name: subject_id
+    type: int
+    constraints:
+      min: 101
+      max: 999
+      digits: 3
+  - name: subname
+    type: string
+  - name: age
+    type: int
+    constraints:
+      min: 5
+      max: 60
+  - name: gender
+    type: choice
+    choices: [Male, Female]
+
+subinfo_mapping:
+  subject_id: 受试者编号（3位数字）
+  subname: 受试者姓名（拼音）
+  age: 年龄
+  gender: 性别
+  Male: 男
+  Female: 女
+  registration_failed: 登记失败
+  registration_successful: 登记成功
+  invalid_input: "{field} 输入无效"
+
+window:
+  size: [1280, 720]
+  units: pix
+  screen: 0
+  bg_color: black
+  fullscreen: true
+  fullscreen_lock_escape: true
+  monitor_width_cm: 35.5
+  monitor_distance_cm: 60
+
+task:
+  task_name: delay_discounting_preview
+  save_path: ./outputs/human
+  language: Chinese
+  voice_name: zh-CN-YunyangNeural
+  voice_enabled: true
+  total_blocks: 1
+  total_trials: 18
+  trial_per_block: 18
+  conditions: [small, medium, large]
+  key_list: ["f", "j"]
+  delta: 1
+  seed_mode: same_within_sub
+  overall_seed: 2025
+  input_mode: keyboard
+  hide_cursor: true
+  force_quit_enabled: true
+  force_quit_shortcut: ctrl+q
+
+timing:
+  cue_duration: 0.6
+  anticipation_duration: 0.2
+  decision_duration: 6.0
+  choice_confirm_duration: 0.3
+  feedback_duration: 0.5
+  iti_duration: 0.5
+
+stimuli:
+  fixation:
+    type: text
+    font: SimHei
+    text: "+"
+    color: white
+    height: 42
+
+  instruction_text:
+    type: text
+    font: SimHei
+    text: |
+      延迟折扣任务
+
+      每个试次会呈现两个收益选项。
+      请根据你的真实偏好进行选择。
+
+      按 F 键选择左侧选项；
+      按 J 键选择右侧选项。
+
+      本任务没有“正确答案”，
+      请在时限内完成选择。
+
+      按空格键开始。
+    color: white
+    height: 26
+    wrapWidth: 980
+
+  cue_text:
+    type: text
+    font: SimHei
+    text: "金额等级：{magnitude_label}"
+    color: cyan
+    height: 34
+
+  option_left:
+    type: text
+    font: SimHei
+    text: "左侧选项"
+    color: white
+    height: 40
+    pos: [-320, 40]
+    wrapWidth: 360
+
+  option_right:
+    type: text
+    font: SimHei
+    text: "右侧选项"
+    color: white
+    height: 40
+    pos: [320, 40]
+    wrapWidth: 360
+
+  highlight_left:
+    type: rect
+    lineColor: white
+    fillColor: transparent
+    pos: [-320, 40]
+    width: 360
+    height: 130
+
+  highlight_right:
+    type: rect
+    lineColor: white
+    fillColor: transparent
+    pos: [320, 40]
+    width: 360
+    height: 130
+
+  choice_prompt:
+    type: text
+    font: SimHei
+    text: "请在规定时间内做出选择"
+    color: yellow
+    height: 24
+    pos: [0, -220]
+    wrapWidth: 900
+
+  feedback_choice:
+    type: text
+    font: SimHei
+    text: "已记录本次选择"
+    color: green
+    height: 34
+
+  feedback_timeout:
+    type: text
+    font: SimHei
+    text: "超时未作答"
+    color: red
+    height: 34
+
+  block_break:
+    type: text
+    font: SimHei
+    text: |
+      第 {block_num}/{total_blocks} 区块结束
+      作答率：{response_rate:.1%}
+      延迟收益选择比例：{ll_rate:.1%}
+      平均反应时：{mean_rt}
+
+      按空格键继续。
+    color: white
+    height: 24
+    wrapWidth: 980
+
+  good_bye:
+    type: text
+    font: SimHei
+    text: |
+      任务结束。
+      总试次：{total_trials}
+      有效作答：{valid_trials}
+      延迟收益选择比例：{ll_rate:.1%}
+
+      按空格键退出。
+    color: white
+    height: 28
+    wrapWidth: 980
+
+triggers:
+  map:
+    exp_onset: 1
+    exp_end: 2
+    block_onset: 10
+    block_end: 11
+    cue_onset: 20
+    anticipation_onset: 25
+    choice_onset: 30
+    choice_confirm_onset: 33
+    choice_response_left: 31
+    choice_response_right: 32
+    choice_no_response: 39
+    feedback_choice_onset: 40
+    feedback_timeout_onset: 41
+    iti_onset: 50
+
+  driver:
+    type: serial_url
+    url: loop://
+    baudrate: 115200
+
+  timing:
+    post_delay_ms: 1
+
+  policy:
+    strict: false
+
+condition_generation:
+  randomize_order: true
+  counterbalance_sides: true
+  ll_left_prob: 0.5
+  enable_logging: true
