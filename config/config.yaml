@@ -42,12 +42,17 @@ task:
   save_path: ./outputs/human
   language: Chinese
   voice_name: zh-CN-YunyangNeural
-  voice_enabled: true
+  voice_enabled: false
   total_blocks: 1
   total_trials: 27
   trial_per_block: 27
   conditions: [small, medium, large]
   key_list: ["f", "j"]
+  currency_unit: "元"
+  option_amount_format: "{amount:.0f}"
+  delay_today_label: "今天到账"
+  delay_future_template: "{days}天后到账"
+  option_text_template: "{amount}{currency_unit}，{delay_label}"
   delta: 1
   seed_mode: same_within_sub
   overall_seed: 2025
@@ -120,7 +125,8 @@ stimuli:
   highlight_left:
     type: rect
     lineColor: white
-    fillColor: transparent
+    lineWidth: 3
+    fillColor: null
     pos: [-320, 40]
     width: 360
     height: 130
@@ -128,7 +134,8 @@ stimuli:
   highlight_right:
     type: rect
     lineColor: white
-    fillColor: transparent
+    lineWidth: 3
+    fillColor: null
     pos: [320, 40]
     width: 360
     height: 130

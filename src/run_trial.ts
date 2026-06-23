@@ -13,8 +13,31 @@ import {
   type SideLabel
 } from "./utils";
 
-function delayLabel(days: number): string {
-  return Number(days) <= 0 ? "今天到账" : `${Math.trunc(days)}天后到账`;
+function settingText(settings: TaskSettings, key: string, fallback: string): string {
+  return String((settings as Record<string, unknown>)[key] ?? fallback);
+}
+
+function formatDelayLabel(days: number, settings: TaskSettings): string {
+  const normalizedDays = Math.trunc(Number(days));
+  if (normalizedDays <= 0) {
+    return settingText(settings, "delay_today_label", "today");
+  }
+  return settingText(settings, "delay_future_template", "{days} days later").replaceAll(
+    "{days}",
+    String(normalizedDays)
+  );
+}
+
+function formatOptionText(amount: number, delayDays: number, settings: TaskSettings): string {
+  const amountText = settingText(settings, "option_amount_format", "{amount:.0f}").replace(
+    /\{amount(?::\.0f)?\}/g,
+    Number(amount).toFixed(0)
+  );
+  return settingText(settings, "option_text_template", "{amount}{currency_unit}, {delay_label}")
+    .replaceAll("{amount}", amountText)
+    .replaceAll("{currency_unit}", settingText(settings, "currency_unit", ""))
+    .replaceAll("{delay_label}", formatDelayLabel(delayDays, settings))
+    .replaceAll("{days}", String(Math.trunc(Number(delayDays))));
 }
 
 function resolveChoiceSide(response: unknown, leftKey: string, rightKey: string): SideLabel | null {
@@ -25,6 +48,10 @@ function resolveChoiceSide(response: unknown, leftKey: string, rightKey: string)
     return "right";
   }
   return null;
+}
+
+function resolveFeedbackStimId(snapshot: TrialSnapshot): "feedback_choice" | "feedback_timeout" {
+  return Boolean(snapshot.units.intertemporal_choice?.choice_made) ? "feedback_choice" : "feedback_timeout";
 }
 
 export function run_trial(
@@ -45,10 +72,7 @@ export function run_trial(
   }
   const leftKey = keys[0];
   const rightKey = keys[1];
-  const trialsPerBlock = Math.max(
-    1,
-    Number(settings.trials_per_block ?? settings.trial_per_block ?? 1)
-  );
+  const trialsPerBlock = Math.max(1, Number(settings.trials_per_block ?? settings.trial_per_block ?? 1));
   const trialNumericId = Number(trial.trial_id);
   const blockTrialIndex = Number.isFinite(trialNumericId)
     ? ((Math.trunc(trialNumericId) - 1) % trialsPerBlock) + 1
@@ -70,11 +94,16 @@ export function run_trial(
     config: condition_generation_config
   });
 
+  const triggerMap = (settings.triggers ?? {}) as Record<string, unknown>;
+  const trigger = (name: string): number | null => {
+    const value = Number(triggerMap[name]);
+    return Number.isFinite(value) ? value : null;
+  };
+
   const llKey = spec.ll_side === "left" ? leftKey : rightKey;
   const ssKey = spec.ll_side === "left" ? rightKey : leftKey;
-  const leftText = `${spec.left_amount.toFixed(0)}元，${delayLabel(spec.left_delay_days)}`;
-  const rightText = `${spec.right_amount.toFixed(0)}元，${delayLabel(spec.right_delay_days)}`;
-  const triggerMap = (settings.triggers ?? {}) as Record<string, unknown>;
+  const leftText = formatOptionText(spec.left_amount, spec.left_delay_days, settings);
+  const rightText = formatOptionText(spec.right_amount, spec.right_delay_days, settings);
 
   const cueDuration = Number(settings.cue_duration ?? 0.6);
   const anticipationDuration = Number(settings.anticipation_duration ?? 0.2);
@@ -94,13 +123,13 @@ export function run_trial(
     task_factors: {
       magnitude: spec.magnitude,
       offer_id: spec.item_id,
-      block_trial_index: spec.block_trial_index,
+      stage: "pre_choice_fixation",
       block_idx,
-      stage: "pre_choice_fixation"
+      block_trial_index: spec.block_trial_index
     },
     stim_id: "fixation"
   });
-  preChoiceFixation.show({ duration: cueDuration }).to_dict();
+  preChoiceFixation.show({ duration: cueDuration, onset_trigger: trigger("cue_onset") }).to_dict();
 
   const offerOnsetJitter = trial.unit("offer_onset_jitter").addStim(stimBank.get("fixation"));
   set_trial_context(offerOnsetJitter, {
@@ -113,13 +142,13 @@ export function run_trial(
     task_factors: {
       magnitude: spec.magnitude,
       offer_id: spec.item_id,
-      block_trial_index: spec.block_trial_index,
+      stage: "offer_onset_jitter",
       block_idx,
-      stage: "offer_onset_jitter"
+      block_trial_index: spec.block_trial_index
     },
     stim_id: "fixation"
   });
-  offerOnsetJitter.show({ duration: anticipationDuration }).to_dict();
+  offerOnsetJitter.show({ duration: anticipationDuration, onset_trigger: trigger("anticipation_onset") }).to_dict();
 
   const intertemporalChoice = trial
     .unit("intertemporal_choice")
@@ -146,8 +175,8 @@ export function run_trial(
       ll_key: llKey,
       left_key: leftKey,
       right_key: rightKey,
-      block_trial_index: spec.block_trial_index,
       block_idx,
+      block_trial_index: spec.block_trial_index,
       stage: "intertemporal_choice"
     },
     stim_id: `mcq27_item_${spec.item_id}`
@@ -157,11 +186,12 @@ export function run_trial(
       keys: [leftKey, rightKey],
       correct_keys: [leftKey, rightKey],
       duration: decisionDuration,
+      onset_trigger: trigger("choice_onset"),
       response_trigger: {
-        [leftKey]: Number(triggerMap.choice_response_left ?? 31),
-        [rightKey]: Number(triggerMap.choice_response_right ?? 32)
+        [leftKey]: trigger("choice_response_left") ?? 31,
+        [rightKey]: trigger("choice_response_right") ?? 32
       },
-      timeout_trigger: Number(triggerMap.choice_no_response ?? 39),
+      timeout_trigger: trigger("choice_no_response"),
       terminate_on_response: true
     })
     .set_state({
@@ -225,21 +255,23 @@ export function run_trial(
     condition_id: spec.condition_id,
     task_factors: {
       magnitude: spec.magnitude,
-      block_trial_index: spec.block_trial_index,
+      choice_made: true,
+      chosen_side: (snapshot: TrialSnapshot) =>
+        resolveChoiceSide(snapshot.units.intertemporal_choice?.response, leftKey, rightKey),
+      stage: "choice_confirmation",
       block_idx,
-      stage: "choice_confirmation"
+      block_trial_index: spec.block_trial_index
     },
-    stim_id: "choice_highlight"
+    stim_id: (snapshot: TrialSnapshot) =>
+      resolveChoiceSide(snapshot.units.intertemporal_choice?.response, leftKey, rightKey) === "left"
+        ? "highlight_left"
+        : "highlight_right"
   });
-  choiceConfirmation.show({ duration: confirmDuration }).to_dict();
+  choiceConfirmation.show({ duration: confirmDuration, onset_trigger: trigger("choice_confirm_onset") }).to_dict();
 
   const outcomeFeedback = trial
     .unit("outcome_feedback")
-    .addStim((snapshot: TrialSnapshot) =>
-      stimBank.get(
-        Boolean(snapshot.units.intertemporal_choice?.choice_made) ? "feedback_choice" : "feedback_timeout"
-      )
-    );
+    .addStim((snapshot: TrialSnapshot) => stimBank.get(resolveFeedbackStimId(snapshot)));
   set_trial_context(outcomeFeedback, {
     trial_id: trial.trial_id,
     phase: "outcome_feedback",
@@ -249,14 +281,23 @@ export function run_trial(
     condition_id: spec.condition_id,
     task_factors: {
       magnitude: spec.magnitude,
-      block_trial_index: spec.block_trial_index,
+      choice_made: intertemporalChoice.ref<boolean>("choice_made"),
+      chosen_option: intertemporalChoice.ref<string | null>("chosen_option"),
+      chose_ll: intertemporalChoice.ref<boolean>("chose_ll"),
+      stage: "outcome_feedback",
       block_idx,
-      stage: "outcome_feedback"
+      block_trial_index: spec.block_trial_index
     },
-    stim_id: "feedback"
+    stim_id: (snapshot: TrialSnapshot) => resolveFeedbackStimId(snapshot)
   });
   outcomeFeedback
-    .show({ duration: feedbackDuration })
+    .show({
+      duration: feedbackDuration,
+      onset_trigger: (snapshot: TrialSnapshot) =>
+        Boolean(snapshot.units.intertemporal_choice?.choice_made)
+          ? trigger("feedback_choice_onset")
+          : trigger("feedback_timeout_onset")
+    })
     .set_state({
       choice_made: intertemporalChoice.ref<boolean>("choice_made"),
       chosen_option: intertemporalChoice.ref<string | null>("chosen_option"),
@@ -274,13 +315,13 @@ export function run_trial(
     condition_id: spec.condition_id,
     task_factors: {
       magnitude: spec.magnitude,
-      block_trial_index: spec.block_trial_index,
+      stage: "inter_trial_interval",
       block_idx,
-      stage: "inter_trial_interval"
+      block_trial_index: spec.block_trial_index
     },
     stim_id: "fixation"
   });
-  interTrialInterval.show({ duration: itiDuration }).to_dict();
+  interTrialInterval.show({ duration: itiDuration, onset_trigger: trigger("iti_onset") }).to_dict();
 
   trial.finalize((snapshot, _runtime, helpers) => {
     helpers.setTrialState("condition_id", spec.condition_id);

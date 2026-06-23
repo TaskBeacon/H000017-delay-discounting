@@ -1,4 +1,4 @@
-import type { ReducedTrialRow } from "psyflow-web";
+import { PythonRandom, type ReducedTrialRow } from "psyflow-web";
 
 export type MagnitudeLabel = "small" | "medium" | "large";
 export type SideLabel = "left" | "right";
@@ -64,23 +64,6 @@ const MCQ27_ITEMS: McqItem[] = [
 
 const VALID_MAGNITUDES = new Set<MagnitudeLabel>(["small", "medium", "large"]);
 
-function makeSeededRandom(seed: number): () => number {
-  let value = seed >>> 0;
-  return () => {
-    value = (value + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(value ^ (value >>> 15), 1 | value);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffleInPlace<T>(values: T[], rng: () => number): void {
-  for (let index = values.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(rng() * (index + 1));
-    [values[index], values[swapIndex]] = [values[swapIndex], values[index]];
-  }
-}
-
 function clampProbability(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value ?? 0.5)));
 }
@@ -133,7 +116,7 @@ export function build_block_plan(
     return [];
   }
   const config = options.config ?? {};
-  const rng = makeSeededRandom(Number(options.seed ?? 2025));
+  const rng = new PythonRandom(Number(options.seed ?? 2025));
   const basePool = filter_item_pool_by_conditions(
     normalize_item_pool(config.item_pool),
     options.condition_labels
@@ -146,7 +129,7 @@ export function build_block_plan(
   while (planned.length < nTrials) {
     const chunk = basePool.map((item) => ({ ...item }));
     if (randomizeOrder) {
-      shuffleInPlace(chunk, rng);
+      rng.shuffle(chunk);
     }
     planned.push(...chunk.map((trial) => ({ ...trial } as PlannedTrial)));
   }
@@ -156,10 +139,10 @@ export function build_block_plan(
   if (counterbalanceSides) {
     const leftCount = Math.floor(nTrials / 2);
     llSides.push(...new Array(leftCount).fill("left"), ...new Array(nTrials - leftCount).fill("right"));
-    shuffleInPlace(llSides, rng);
+    rng.shuffle(llSides);
   } else {
     for (let index = 0; index < nTrials; index += 1) {
-      llSides.push(rng() < llLeftProb ? "left" : "right");
+      llSides.push(rng.random() < llLeftProb ? "left" : "right");
     }
   }
 
